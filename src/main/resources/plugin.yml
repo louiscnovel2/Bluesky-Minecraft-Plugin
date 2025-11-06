@@ -1,9 +1,9 @@
 name: BlueskyPlugin
-version: 1.1
+version: 1.2
 main: com.example.blueskyplugin.BlueskyPlugin
-api-version: '1.20'
+api-version: '1.21'
 commands:
   bsky:
-    description: Blueskyのコマンド
-    usage: /bsky <login|post|tl|feed>
+    description: Bluesky commands
+    usage: /bsky <login|post|tl|feed|lang>
     permission: bluesky.use

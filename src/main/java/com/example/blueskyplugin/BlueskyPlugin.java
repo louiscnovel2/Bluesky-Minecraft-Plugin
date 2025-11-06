@@ -20,18 +20,29 @@ import org.json.JSONArray;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.FileReader;
+import java.util.Collections;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 public class BlueskyPlugin extends JavaPlugin {
     private Map<UUID, String> userTokens = new HashMap<>();
     private Map<UUID, String> userHandles = new HashMap<>();
+    // ユーザーの選択言語を保存 ("japanese" or "english")
+    private Map<UUID, String> userLang = new HashMap<>();
     private Map<UUID, List<String>> userFeeds = new HashMap<>();
+
+    // ローカライズ用メッセージ辞書
+    private final Map<String, Map<String, String>> messages = new HashMap<>();
 
     @Override
     public void onEnable() {
-        getLogger().info("BlueskyPluginが有効になりました！");
+        getLogger().info("BlueskyPlugin enabled");
         
         // 保存されたデータを読み込む
         loadData();
+
+        // メッセージ辞書初期化
+        initMessages();
         
         // コマンドのTab補完を登録
         getCommand("bsky").setTabCompleter((sender, command, alias, args) -> {
@@ -42,7 +53,7 @@ public class BlueskyPlugin extends JavaPlugin {
             
             if (args.length == 1) {
                 // 最初の引数の候補
-                String[] commands = {"login", "logout", "post", "tl"};
+                String[] commands = {"login", "logout", "post", "tl", "lang", "feed"};
                 for (String cmd : commands) {
                     if (cmd.startsWith(args[0].toLowerCase())) {
                         completions.add(cmd);
@@ -75,19 +86,22 @@ public class BlueskyPlugin extends JavaPlugin {
             // ログイン情報を保存
             JSONObject tokensData = new JSONObject();
             JSONObject handlesData = new JSONObject();
+            JSONObject langData = new JSONObject();
             
             userTokens.forEach((uuid, token) -> tokensData.put(uuid.toString(), token));
             userHandles.forEach((uuid, handle) -> handlesData.put(uuid.toString(), handle));
+            userLang.forEach((uuid, lang) -> langData.put(uuid.toString(), lang));
             
             data.put("tokens", tokensData);
             data.put("handles", handlesData);
+            data.put("lang", langData);
             
             // ファイルに書き込み
             try (FileWriter writer = new FileWriter(file)) {
                 writer.write(data.toString(2));
             }
         } catch (Exception e) {
-            getLogger().warning("データの保存中にエラーが発生しました: " + e.getMessage());
+            getLogger().warning("Error saving data: " + e.getMessage());
         }
     }
     
@@ -126,15 +140,110 @@ public class BlueskyPlugin extends JavaPlugin {
                 String handle = handlesData.getString(uuidStr);
                 userHandles.put(uuid, handle);
             });
+
+            // 言語設定を読み込み (存在しない場合は日本語)
+            if (data.has("lang")) {
+                JSONObject langData = data.getJSONObject("lang");
+                langData.keys().forEachRemaining(uuidStr -> {
+                    UUID uuid = UUID.fromString(uuidStr);
+                    String lang = langData.getString(uuidStr);
+                    userLang.put(uuid, lang);
+                });
+            }
         } catch (Exception e) {
-            getLogger().warning("データの読み込み中にエラーが発生しました: " + e.getMessage());
+            getLogger().warning("Error loading data: " + e.getMessage());
+        }
+    }
+
+    // 初期メッセージを設定
+    private void initMessages() {
+        Map<String, String> ja = new HashMap<>();
+        Map<String, String> en = new HashMap<>();
+
+        ja.put("usage_login", "使用方法: /bsky login <handle> <password>");
+        en.put("usage_login", "Usage: /bsky login <handle> <password>");
+
+        ja.put("usage_post", "使用方法: /bsky post <メッセージ>");
+        en.put("usage_post", "Usage: /bsky post <message>");
+
+        ja.put("usage_lang", "使用方法: /bsky lang <english|japanese>");
+        en.put("usage_lang", "Usage: /bsky lang <english|japanese>");
+
+        ja.put("must_login", "先にログインしてください！");
+        en.put("must_login", "Please login first!");
+
+        ja.put("login_success", "ログインに成功しました！");
+        en.put("login_success", "Login successful!");
+
+        ja.put("login_failed", "ログインに失敗しました。");
+        en.put("login_failed", "Login failed.");
+
+        ja.put("post_success", "投稿に成功しました！");
+        en.put("post_success", "Post succeeded!");
+
+        ja.put("not_logged_in", "ログインしていません。");
+        en.put("not_logged_in", "You are not logged in.");
+
+        ja.put("logout_success", "ログアウトしました。");
+        en.put("logout_success", "Logged out.");
+
+        ja.put("invalid_command", "無効なコマンドです。");
+        en.put("invalid_command", "Invalid command.");
+
+        ja.put("timeline_header", "=== Blueskyタイムライン ===");
+        en.put("timeline_header", "=== Bluesky Timeline ===");
+
+        ja.put("timeline_failed", "タイムラインの取得に失敗しました。");
+        en.put("timeline_failed", "Failed to retrieve timeline.");
+
+        ja.put("feed_list_failed", "フィード一覧の取得に失敗しました。");
+        en.put("feed_list_failed", "Failed to retrieve feed list.");
+
+        ja.put("lang_changed_en", "言語を英語に変更しました。/bsky lang japanese で日本語に戻せます。");
+        en.put("lang_changed_en", "Language changed to English. Use /bsky lang japanese to switch back.");
+
+        ja.put("lang_changed_ja", "言語を日本語に変更しました。/bsky lang english で英語に切り替えられます。");
+        en.put("lang_changed_ja", "Language changed to Japanese. Use /bsky lang english to switch to English.");
+
+        messages.put("japanese", ja);
+        messages.put("english", en);
+    }
+
+    // 言語に基づいてメッセージを送信
+    private void sendLocalized(Player player, String key, Object... args) {
+        UUID uuid = player.getUniqueId();
+        String lang = userLang.getOrDefault(uuid, "japanese");
+        Map<String, String> dict = messages.getOrDefault(lang, messages.get("japanese"));
+        String template = dict.getOrDefault(key, messages.get("english").getOrDefault(key, key));
+        try {
+            String msg = args == null || args.length == 0 ? template : String.format(template, args);
+            player.sendMessage(msg);
+        } catch (Exception e) {
+            player.sendMessage(template);
+        }
+    }
+
+    // 言語切替処理
+    private void handleLang(Player player, String langArg) {
+        String normalized = langArg.toLowerCase();
+        UUID uuid = player.getUniqueId();
+        if (normalized.equals("english") || normalized.equals("en")) {
+            userLang.put(uuid, "english");
+            saveData();
+            sendLocalized(player, "lang_changed_en");
+        } else if (normalized.equals("japanese") || normalized.equals("ja") || normalized.equals("jp")) {
+            userLang.put(uuid, "japanese");
+            saveData();
+            sendLocalized(player, "lang_changed_ja");
+        } else {
+            sendLocalized(player, "usage_lang");
         }
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage("このコマンドはプレイヤーのみが実行できます。");
+            sender.sendMessage("Only players can use this command.");
             return true;
         }
 
@@ -149,7 +258,7 @@ public class BlueskyPlugin extends JavaPlugin {
         switch (args[0].toLowerCase()) {
             case "login":
                 if (args.length != 3) {
-                    player.sendMessage("使用方法: /bsky login <handle> <password>");
+                    sendLocalized(player, "usage_login");
                     return true;
                 }
                 handleLogin(player, args[1], args[2]);
@@ -159,11 +268,11 @@ public class BlueskyPlugin extends JavaPlugin {
                 break;
             case "post":
                 if (!userTokens.containsKey(playerId)) {
-                    player.sendMessage("先にログインしてください！");
+                    sendLocalized(player, "must_login");
                     return true;
                 }
                 if (args.length < 2) {
-                    player.sendMessage("使用方法: /bsky post <メッセージ>");
+                    sendLocalized(player, "usage_post");
                     return true;
                 }
                 String message = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
@@ -171,13 +280,20 @@ public class BlueskyPlugin extends JavaPlugin {
                 break;
             case "tl":
                 if (!userTokens.containsKey(playerId)) {
-                    player.sendMessage("先にログインしてください！");
+                    sendLocalized(player, "must_login");
                     return true;
                 }
                 handleTimeline(player);
                 break;
+            case "lang":
+                if (args.length != 2) {
+                    sendLocalized(player, "usage_lang");
+                    return true;
+                }
+                handleLang(player, args[1]);
+                break;
             default:
-                player.sendMessage("無効なコマンドです。");
+                sendLocalized(player, "invalid_command");
                 break;
         }
         return true;
@@ -218,12 +334,14 @@ public class BlueskyPlugin extends JavaPlugin {
                 userTokens.put(player.getUniqueId(), accessJwt);
                 // 常にフルハンドルを保存
                 userHandles.put(player.getUniqueId(), fullHandle);
-                player.sendMessage("ログインに成功しました！");
+                // デフォルト言語がなければ日本語を設定
+                userLang.putIfAbsent(player.getUniqueId(), "japanese");
+                sendLocalized(player, "login_success");
             } else {
-                player.sendMessage("ログインに失敗しました。");
+                sendLocalized(player, "login_failed");
             }
         } catch (Exception e) {
-            player.sendMessage("エラーが発生しました: " + e.getMessage());
+            player.sendMessage("Error occurred: " + e.getMessage());
         }
     }
 
@@ -287,12 +405,12 @@ public class BlueskyPlugin extends JavaPlugin {
 
             int responseCode = conn.getResponseCode();
             if (responseCode == 200) {
-                player.sendMessage("投稿に成功しました！");
+                sendLocalized(player, "post_success");
             } else {
-                player.sendMessage("投稿に失敗しました。エラー: " + response.toString());
+                player.sendMessage("Post failed. Error: " + response.toString());
             }
         } catch (Exception e) {
-            player.sendMessage("エラーが発生しました: " + e.getMessage());
+            player.sendMessage("Error occurred: " + e.getMessage());
             getLogger().warning("投稿中にエラーが発生しました: " + e.getMessage());
         }
     }
@@ -300,7 +418,7 @@ public class BlueskyPlugin extends JavaPlugin {
     private void handleLogout(Player player) {
         UUID playerId = player.getUniqueId();
         if (!userTokens.containsKey(playerId)) {
-            player.sendMessage("ログインしていません。");
+            sendLocalized(player, "not_logged_in");
             return;
         }
         
@@ -308,7 +426,7 @@ public class BlueskyPlugin extends JavaPlugin {
         userHandles.remove(playerId);
         // 変更をファイルに保存
         saveData();
-        player.sendMessage("ログアウトしました。");
+        sendLocalized(player, "logout_success");
     }
 
     private void handleTimeline(Player player) {
@@ -332,7 +450,7 @@ public class BlueskyPlugin extends JavaPlugin {
             int responseCode = conn.getResponseCode();
 
             if (responseCode == 200) {
-                player.sendMessage("=== Blueskyタイムライン ===");
+                sendLocalized(player, "timeline_header");
                 responseJson.getJSONArray("feed").forEach(post -> {
                     JSONObject postObj = (JSONObject) post;
                     JSONObject postView = postObj.getJSONObject("post");
@@ -343,10 +461,10 @@ public class BlueskyPlugin extends JavaPlugin {
                     player.sendMessage("§6" + displayName + " §b(@" + handle + ")§r: " + text);
                 });
             } else {
-                player.sendMessage("タイムラインの取得に失敗しました。");
+                sendLocalized(player, "timeline_failed");
             }
         } catch (Exception e) {
-            player.sendMessage("エラーが発生しました: " + e.getMessage());
+            player.sendMessage("Error occurred: " + e.getMessage());
         }
     }
 
@@ -403,7 +521,7 @@ public class BlueskyPlugin extends JavaPlugin {
             int responseCode = conn.getResponseCode();
 
             if (responseCode == 200) {
-                player.sendMessage("\n=== 作成したカスタムフィード ===");
+                player.sendMessage("\n=== Created custom feeds ===");
                 responseJson.getJSONArray("feeds").forEach(feed -> {
                     JSONObject feedObj = (JSONObject) feed;
                     String feedName = feedObj.getString("displayName");
@@ -411,10 +529,10 @@ public class BlueskyPlugin extends JavaPlugin {
                     player.sendMessage("- " + feedName + " (URI: " + uri + ")");
                 });
             } else {
-                player.sendMessage("フィード一覧の取得に失敗しました。");
+                sendLocalized(player, "feed_list_failed");
             }
         } catch (Exception e) {
-            player.sendMessage("エラーが発生しました: " + e.getMessage());
+            player.sendMessage("Error occurred: " + e.getMessage());
         }
     }
 

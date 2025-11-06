@@ -5,5 +5,5 @@ api-version: '1.21'
 commands:
   bsky:
     description: Blueskyのコマンド
-    usage: /bsky <login|post|tl|feed>
+    usage: /bsky <login|post|tl|feed|lang>
     permission: bluesky.use
