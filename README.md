@@ -4,7 +4,7 @@
 投稿をしたり、タイムラインを見たりすることが可能です！！
 
 ## 導入方法
-サーバーを`/stop`で停止し、サーバー内ディレクトリの`/plugins/`に[Releaseページ](https://github.com/louiscnovel2/Bluesky-Minecraft-Plugin/releases)からダウンロードした`BlueskyPlugin-1.1.jar`を入れてサーバーを起動するだけです。
+サーバーを`/stop`で停止し、サーバー内ディレクトリの`/plugins/`に[Releaseページ](https://github.com/louiscnovel2/Bluesky-Minecraft-Plugin/releases)からダウンロードした`BlueskyPlugin-1.2.jar`を入れてサーバーを起動するだけです。
 
 ## ログインする
 
